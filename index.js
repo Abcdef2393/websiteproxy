@@ -1,5 +1,5 @@
-const express = require(express);
-const cheerio = require(cheerio);
+const express = require("express");
+const cheerio = require("cheerio");
 
 const app = express();
 
@@ -28,6 +28,6 @@ app.get("/camera/:env/{*splat}", async (req, res) => {
     }
 });
 
-app.listen(process.env.PORT  3000, () = {
-    console.log(Server is running);
+app.listen(process.env.PORT || 3000, () => {
+    console.log("Server is running");
 });
