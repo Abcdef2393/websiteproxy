@@ -1,13 +1,30 @@
 const express = require("express");
 const cheerio = require("cheerio");
+const cookieParser = require("cookie-parser");
 
 const app = express();
+
+app.use(cookieParser());
 
 app.get("/:env/{*splat}", async (req, res) => {
     const env = req.params.env;
 
-    if (env !== process.env.FETCH_KEY) {
+    // Accept either the key in the URL or the key stored in the cookie
+    if (
+        env !== process.env.FETCH_KEY &&
+        req.cookies.proxy_key !== process.env.FETCH_KEY
+    ) {
         return res.status(401).send("Invalid key");
+    }
+
+    // If the correct key was supplied in the URL,
+    // store it in a cookie for future requests.
+    if (env === process.env.FETCH_KEY) {
+        res.cookie("proxy_key", process.env.FETCH_KEY, {
+            httpOnly: true,
+            secure: true,
+            sameSite: "lax"
+        });
     }
 
     const target = Array.isArray(req.params.splat)
