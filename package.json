@@ -1,0 +1,13 @@
+{
+  "name": "website-proxy",
+  "version": "1.0.0",
+  "description": "Website proxy",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "express": "^5.1.0"
+  }
+}
