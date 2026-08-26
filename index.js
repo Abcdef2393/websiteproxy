@@ -4,12 +4,11 @@ const cheerio = require("cheerio");
 const app = express();
 
 
-// ========================================
-// Main proxy route
-// /KEY/?url=https://duckduckgo.com/
-// ========================================
+// =====================================
+// /KEY/https://example.com
+// =====================================
 
-app.get("/:env/", async (req, res) => {
+app.get("/:env/{*splat}", async (req, res) => {
 
     const env = req.params.env;
 
@@ -18,19 +17,18 @@ app.get("/:env/", async (req, res) => {
         return res.status(401).send("Invalid key");
     }
 
-    const target = req.query.url;
-
-    if (!target) {
-        return res.status(400).send("Missing url");
-    }
+    // Rebuild target URL
+    const target = Array.isArray(req.params.splat)
+        ? req.params.splat.join("/")
+        : req.params.splat;
 
     await proxy(target, env, res);
 });
 
 
-// ========================================
+// =====================================
 // Proxy
-// ========================================
+// =====================================
 
 async function proxy(target, env, res) {
 
@@ -43,23 +41,26 @@ async function proxy(target, env, res) {
         });
 
 
-        // ========================================
-        // HTTP redirects
-        // ========================================
+        // =================================
+        // Handle redirects
+        // =================================
 
-        if (response.status >= 300 && response.status < 400) {
+        if (
+            response.status >= 300 &&
+            response.status < 400
+        ) {
 
             const location =
                 response.headers.get("location");
 
             if (location) {
 
-                const absolute =
+                const redirectURL =
                     new URL(location, target).href;
 
                 return res.redirect(
                     302,
-                    proxyURL(env, absolute)
+                    makeProxyURL(env, redirectURL)
                 );
             }
         }
@@ -77,9 +78,9 @@ async function proxy(target, env, res) {
             response.headers.get("content-type") || "";
 
 
-        // ========================================
+        // =================================
         // HTML
-        // ========================================
+        // =================================
 
         if (contentType.includes("text/html")) {
 
@@ -88,13 +89,14 @@ async function proxy(target, env, res) {
             const $ = cheerio.load(html);
 
 
-            // ------------------------------
+            // ---------------------------------
             // Links
-            // ------------------------------
+            // ---------------------------------
 
             $("a[href]").each((_, element) => {
 
-                const href = $(element).attr("href");
+                const href =
+                    $(element).attr("href");
 
                 if (!href) return;
 
@@ -105,21 +107,23 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "href",
-                        proxyURL(env, absolute)
+                        makeProxyURL(env, absolute)
                     );
 
                 } catch {}
             });
 
 
-            // ------------------------------
+            // ---------------------------------
             // Forms
-            // ------------------------------
+            // ---------------------------------
 
-            $("form").each((_, element) => {
+            $("form[action]").each((_, element) => {
 
                 const action =
-                    $(element).attr("action") || target;
+                    $(element).attr("action");
+
+                if (!action) return;
 
                 try {
 
@@ -128,16 +132,16 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "action",
-                        proxyURL(env, absolute)
+                        makeProxyURL(env, absolute)
                     );
 
                 } catch {}
             });
 
 
-            // ------------------------------
+            // ---------------------------------
             // Images
-            // ------------------------------
+            // ---------------------------------
 
             $("img[src]").each((_, element) => {
 
@@ -153,16 +157,16 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "src",
-                        proxyURL(env, absolute)
+                        makeProxyURL(env, absolute)
                     );
 
                 } catch {}
             });
 
 
-            // ------------------------------
+            // ---------------------------------
             // Scripts
-            // ------------------------------
+            // ---------------------------------
 
             $("script[src]").each((_, element) => {
 
@@ -178,16 +182,16 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "src",
-                        proxyURL(env, absolute)
+                        makeProxyURL(env, absolute)
                     );
 
                 } catch {}
             });
 
 
-            // ------------------------------
-            // CSS
-            // ------------------------------
+            // ---------------------------------
+            // Stylesheets
+            // ---------------------------------
 
             $("link[href]").each((_, element) => {
 
@@ -203,7 +207,7 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "href",
-                        proxyURL(env, absolute)
+                        makeProxyURL(env, absolute)
                     );
 
                 } catch {}
@@ -216,9 +220,9 @@ async function proxy(target, env, res) {
         }
 
 
-        // ========================================
-        // Images / JS / CSS / other files
-        // ========================================
+        // =================================
+        // Images / JS / CSS / .data / etc.
+        // =================================
 
         const data =
             Buffer.from(
@@ -244,17 +248,17 @@ async function proxy(target, env, res) {
 }
 
 
-// ========================================
-// Make every URL stay inside the proxy
-// ========================================
+// =====================================
+// Create proxy URL
+// =====================================
 
-function proxyURL(env, target) {
+function makeProxyURL(env, url) {
 
-    return `/${env}/?url=${encodeURIComponent(target)}`;
+    return `/${env}/${url}`;
 }
 
 
-// ========================================
+// =====================================
 
 app.listen(
     process.env.PORT || 3000,
