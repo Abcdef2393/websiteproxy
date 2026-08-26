@@ -4,35 +4,46 @@ const cheerio = require("cheerio");
 const app = express();
 
 
-// =====================================
-// /KEY/https://example.com
-// =====================================
-
-app.get("/:env/{*splat}", async (req, res) => {
+// Open a website:
+// /KEY/?url=https://duckduckgo.com
+app.get("/:env/", async (req, res) => {
 
     const env = req.params.env;
 
-    // Check key
     if (env !== process.env.FETCH_KEY) {
         return res.status(401).send("Invalid key");
     }
 
-    // Rebuild target URL
-    const target = Array.isArray(req.params.splat)
-        ? req.params.splat.join("/")
-        : req.params.splat;
+    const target = req.query.url;
+
+    if (!target) {
+        return res.status(400).send("Missing url");
+    }
 
     await proxy(target, env, res);
 });
 
 
-// =====================================
-// Proxy
-// =====================================
+// Everything after /KEY/ is treated as a target URL
+app.get("/:env/*", async (req, res) => {
+
+    const env = req.params.env;
+
+    if (env !== process.env.FETCH_KEY) {
+        return res.status(401).send("Invalid key");
+    }
+
+    const path = Array.isArray(req.params[0])
+        ? req.params[0].join("/")
+        : req.params[0];
+
+    const target = decodeURIComponent(path);
+
+    await proxy(target, env, res);
+});
+
 
 async function proxy(target, env, res) {
-
-    console.log("Target:", target);
 
     try {
 
@@ -40,18 +51,10 @@ async function proxy(target, env, res) {
             redirect: "manual"
         });
 
-
-        // =================================
         // Handle redirects
-        // =================================
+        if (response.status >= 300 && response.status < 400) {
 
-        if (
-            response.status >= 300 &&
-            response.status < 400
-        ) {
-
-            const location =
-                response.headers.get("location");
+            const location = response.headers.get("location");
 
             if (location) {
 
@@ -60,14 +63,13 @@ async function proxy(target, env, res) {
 
                 return res.redirect(
                     302,
-                    makeProxyURL(env, redirectURL)
+                    `/${env}/${encodeURIComponent(redirectURL)}`
                 );
             }
         }
 
 
         if (!response.ok) {
-
             return res
                 .status(response.status)
                 .send("Target returned an error");
@@ -78,10 +80,7 @@ async function proxy(target, env, res) {
             response.headers.get("content-type") || "";
 
 
-        // =================================
         // HTML
-        // =================================
-
         if (contentType.includes("text/html")) {
 
             const html = await response.text();
@@ -89,14 +88,10 @@ async function proxy(target, env, res) {
             const $ = cheerio.load(html);
 
 
-            // ---------------------------------
             // Links
-            // ---------------------------------
-
             $("a[href]").each((_, element) => {
 
-                const href =
-                    $(element).attr("href");
+                const href = $(element).attr("href");
 
                 if (!href) return;
 
@@ -107,17 +102,14 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "href",
-                        makeProxyURL(env, absolute)
+                        `/${env}/${encodeURIComponent(absolute)}`
                     );
 
                 } catch {}
             });
 
 
-            // ---------------------------------
             // Forms
-            // ---------------------------------
-
             $("form[action]").each((_, element) => {
 
                 const action =
@@ -132,17 +124,14 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "action",
-                        makeProxyURL(env, absolute)
+                        `/${env}/${encodeURIComponent(absolute)}`
                     );
 
                 } catch {}
             });
 
 
-            // ---------------------------------
             // Images
-            // ---------------------------------
-
             $("img[src]").each((_, element) => {
 
                 const src =
@@ -157,17 +146,14 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "src",
-                        makeProxyURL(env, absolute)
+                        `/${env}/${encodeURIComponent(absolute)}`
                     );
 
                 } catch {}
             });
 
 
-            // ---------------------------------
             // Scripts
-            // ---------------------------------
-
             $("script[src]").each((_, element) => {
 
                 const src =
@@ -182,17 +168,14 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "src",
-                        makeProxyURL(env, absolute)
+                        `/${env}/${encodeURIComponent(absolute)}`
                     );
 
                 } catch {}
             });
 
 
-            // ---------------------------------
-            // Stylesheets
-            // ---------------------------------
-
+            // CSS
             $("link[href]").each((_, element) => {
 
                 const href =
@@ -207,7 +190,7 @@ async function proxy(target, env, res) {
 
                     $(element).attr(
                         "href",
-                        makeProxyURL(env, absolute)
+                        `/${env}/${encodeURIComponent(absolute)}`
                     );
 
                 } catch {}
@@ -220,19 +203,11 @@ async function proxy(target, env, res) {
         }
 
 
-        // =================================
-        // Images / JS / CSS / .data / etc.
-        // =================================
-
+        // Images, CSS, JS, etc.
         const data =
-            Buffer.from(
-                await response.arrayBuffer()
-            );
+            Buffer.from(await response.arrayBuffer());
 
-        res.set(
-            "Content-Type",
-            contentType
-        );
+        res.set("Content-Type", contentType);
 
         res.send(data);
 
@@ -241,28 +216,14 @@ async function proxy(target, env, res) {
 
         console.error("FETCH ERROR:", err);
 
-        res
-            .status(500)
-            .send("Failed to fetch website");
+        res.status(500).send(
+            "Failed to fetch website: " + err.message
+        );
     }
 }
 
-
-// =====================================
-// Create proxy URL
-// =====================================
-
-function makeProxyURL(env, url) {
-
-    return `/${env}/${url}`;
-}
-
-
-// =====================================
 
 app.listen(
     process.env.PORT || 3000,
-    () => {
-        console.log("Server is running");
-    }
+    () => console.log("Server is running")
 );
