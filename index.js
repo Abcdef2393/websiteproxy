@@ -1,4 +1,5 @@
 const express = require("express");
+const cheerio = require("cheerio");
 
 const app = express();
 
@@ -24,7 +25,25 @@ app.get("/:env/{*splat}", async (req, res) => {
 
         const html = await response.text();
 
-        res.type("html").send(html);
+        const $ = cheerio.load(html);
+
+        $("a[href]").each((_, element) => {
+            const href = $(element).attr("href");
+
+            if (!href) return;
+
+            try {
+                const absolute = new URL(href, target).href;
+
+                $(element).attr(
+                    "href",
+                    `/${env}/${absolute}`
+                );
+            } catch {}
+        });
+
+        res.type("html").send($.html());
+
     } catch (err) {
         console.error("FETCH ERROR:", err);
         res.status(500).send("Failed to fetch website");
